@@ -5,22 +5,20 @@ from rdkit.Chem import AllChem
 from rdkit.Chem.Draw import rdMolDraw2D
 from PIL import Image, ImageDraw, ImageFont
 import io
-import os
 
-# --- 1. GLOBALE KONFIGURATION (MUSS ZUERST KOMMEN) ---
-st.set_page_config(page_title="Chemie-Designer", page_icon="🧪", layout="wide")
+# --- 1. GLOBALE KONFIGURATION ---
+st.set_page_config(page_title="Chemie-Designer Pro", page_icon="🧪", layout="wide")
 
 # --- 2. FUNKTIONEN ---
 
 def generate_mol_img(smiles):
-    """Erzeugt ein Bild-Objekt aus einem SMILES und ersetzt '*' durch R-Labels."""
+    """Erzeugt ein Bild-Objekt mit fixierter Skalierung und dickeren Bindungen."""
     mol = Chem.MolFromSmiles(smiles)
-    if not mol:
-        return None
+    if not mol: return None
     
+    # R-Label Logik
     dummy_idx = 0
     labels = ["R", "R'", "R''", "R'''"]
-    
     for atom in mol.GetAtoms():
         if atom.GetSymbol() == "*":
             label = labels[dummy_idx] if dummy_idx < len(labels) else f"R{dummy_idx}"
@@ -29,144 +27,133 @@ def generate_mol_img(smiles):
 
     AllChem.Compute2DCoords(mol)
     
-    d = rdMolDraw2D.MolDraw2DCairo(300, 300)
+    # RDKit Drawing Options für "sauberen" Look
+    d = rdMolDraw2D.MolDraw2DCairo(400, 400) # Etwas größer für Schärfe
     opts = d.drawOptions()
-    opts.bondLineWidth = 2
-    opts.prepareMolsBeforeDrawing = False 
+    opts.bondLineWidth = 3           # Dickere Bindungen
+    opts.minFontSize = 20            # Lesbare Labels
+    opts.fixedBondLength = 35        # Hält alle Moleküle im gleichen Maßstab
+    
     d.DrawMolecule(mol)
     d.FinishDrawing()
-    
     return Image.open(io.BytesIO(d.GetDrawingText()))
 
-def parse_smiles(smiles_str):
-    if not smiles_str or str(smiles_str).lower() == "nan" or str(smiles_str).strip() == "":
+def export_to_rxn(smiles_str):
+    """Erstellt einen MDL RXN Block für KingDraw/BioVIA."""
+    try:
+        rxn = AllChem.ReactionFromSmarts(smiles_str, useSmiles=True)
+        return AllChem.ReactionToRxnBlock(rxn)
+    except:
         return None
-    parts = str(smiles_str).split(">")
-    if len(parts) == 3:
-        return {"r": parts[0].split("."), "a": parts[1], "p": parts[2].split(".")}
-    elif ">>" in smiles_str:
-        temp = smiles_str.split(">>")
-        return {"r": temp[0].split("."), "a": "", "p": temp[1].split(".")}
+
+def parse_smiles(smiles_str):
+    if not smiles_str or str(smiles_str).lower() == "nan": return None
+    if ">>" in smiles_str:
+        parts = smiles_str.split(">>")
+        reactants = parts[0].split(".")
+        products = parts[1].split(".")
+        # Agent-Check (falls Format A.B>Agent>C)
+        return {"r": reactants, "a": "", "p": products}
     return None
 
 def draw_reaction_line(data, ratio_str, reaction_name="Unbenannte Reaktion"):
-    """Erstellt das kombinierte Bild mit Titel oben drauf."""
     r_parts = str(ratio_str).replace(">>", ".").split(".")
-    
-    canvas = Image.new('RGB', (2500, 500), color=(255, 255, 255))
+    canvas = Image.new('RGB', (2800, 600), color=(255, 255, 255))
     draw = ImageDraw.Draw(canvas)
     
+    # Fonts laden mit massiv erhöhter Größe für Lesbarkeit
     try: 
-        font_title = ImageFont.truetype("arial.ttf", 45)
-        font_main = ImageFont.truetype("arial.ttf", 35)
+        font_title = ImageFont.truetype("arial.ttf", 50)
+        font_main = ImageFont.truetype("arial.ttf", 90) 
     except: 
-        font_title = ImageFont.load_default()
         font_main = ImageFont.load_default()
 
-    # 0. REAKTIONSNAME ZEICHNEN
-    draw.text((40, 20), reaction_name, fill="black", font=font_title)
+    draw.text((50, 30), reaction_name, fill="black", font=font_title)
     
-    x_cursor, y_center = 40, 150 
+    x_cursor = 50
+    y_midline = 300 # Das Zentrum der vertikalen Achse
+
+    def draw_centered_text(text, x, y_mid, font, color="black"):
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_h = bbox[3] - bbox[1]
+        draw.text((x, y_mid - (text_h // 2) - 10), text, fill=color, font=font)
+        return bbox[2] - bbox[0] # Return width
 
     # 1. REAKTANDEN
     for i, sm in enumerate(data['r']):
         coeff = r_parts[i].strip() if i < len(r_parts) else ""
         if coeff not in ["1", "nan", "", "1.0"]:
-            draw.text((x_cursor, y_center + 130), coeff, fill="black", font=font_main)
-            x_cursor += 50
+            w = draw_centered_text(coeff, x_cursor, y_midline, font_main)
+            x_cursor += w + 20
         
         mol_img = generate_mol_img(sm)
         if mol_img:
-            canvas.paste(mol_img, (x_cursor, y_center), mol_img.convert("RGBA"))
-            x_cursor += 310
+            mol_y = y_midline - (mol_img.height // 2)
+            canvas.paste(mol_img, (x_cursor, mol_y), mol_img.convert("RGBA"))
+            x_cursor += mol_img.width
         
         if i < len(data['r']) - 1:
-            draw.text((x_cursor + 10, y_center + 130), "+", fill="black", font=font_main)
-            x_cursor += 80
+            x_cursor += 20
+            w = draw_centered_text("+", x_cursor, y_midline, font_main)
+            x_cursor += w + 40
 
     # 2. PFEIL
-    x_cursor += 20
-    arrow_len = 220
-    y_f = y_center + 150
-    draw.line([(x_cursor, y_f), (x_cursor + arrow_len, y_f)], fill="black", width=4)
-    draw.polygon([(x_cursor + arrow_len, y_f), (x_cursor + arrow_len - 15, y_f - 8), (x_cursor + arrow_len - 15, y_f + 8)], fill="black")
-    if data['a']:
-        draw.text((x_cursor + 10, y_f - 60), str(data['a']), fill="blue", font=font_main)
-    x_cursor += arrow_len + 40
+    x_cursor += 40
+    arrow_y = y_midline
+    draw.line([(x_cursor, arrow_y), (x_cursor + 250, arrow_y)], fill="black", width=5)
+    draw.polygon([(x_cursor + 250, arrow_y), (x_cursor + 230, arrow_y - 15), (x_cursor + 230, arrow_y + 15)], fill="black")
+    x_cursor += 300
 
     # 3. PRODUKTE
     offset = len(data['r'])
     for i, sm in enumerate(data['p']):
-        coeff = r_parts[offset + i].strip() if (offset + i) < len(r_parts) else ""
+        coeff_idx = offset + i
+        coeff = r_parts[coeff_idx].strip() if coeff_idx < len(r_parts) else ""
         if coeff not in ["1", "nan", "", "1.0"]:
-            draw.text((x_cursor, y_center + 130), coeff, fill="black", font=font_main)
-            x_cursor += 50
+            w = draw_centered_text(coeff, x_cursor, y_midline, font_main)
+            x_cursor += w + 20
         
         mol_img = generate_mol_img(sm)
         if mol_img:
-            canvas.paste(mol_img, (x_cursor, y_center), mol_img.convert("RGBA"))
-            x_cursor += 310
+            mol_y = y_midline - (mol_img.height // 2)
+            canvas.paste(mol_img, (x_cursor, mol_y), mol_img.convert("RGBA"))
+            x_cursor += mol_img.width
         
         if i < len(data['p']) - 1:
-            draw.text((x_cursor + 10, y_center + 130), "+", fill="black", font=font_main)
-            x_cursor += 80
+            x_cursor += 20
+            w = draw_centered_text("+", x_cursor, y_midline, font_main)
+            x_cursor += w + 40
 
-    return canvas.crop((0, 0, x_cursor + 20, 500))
+    return canvas.crop((0, 0, x_cursor + 50, 600))
 
-# --- 3. HAUPT-INTERFACE ---
+# --- 3. INTERFACE ---
 
-st.markdown("# ⚗️ Chemie-Reaktions Visualisierer")
-st.write("Erstelle saubere Reaktionsgleichungen mit Namen und R-Gruppen.")
-st.divider()
+st.title("⚗️ Chemie-Designer Pro")
+tab1, tab2 = st.tabs(["✨ Einzel-Eingabe", "📂 Batch-Export"])
 
-# Tabs definieren
-tab1, tab2 = st.tabs(["✨ Einzelne Eingabe", "📂 Excel-Verarbeitung"])
-
-# --- TAB 1: EINZEL-EINGABE ---
 with tab1:
     col1, col2 = st.columns([2, 1])
     with col1:
-        reaction_name_input = st.text_input("Name der Reaktion", "Meine Reaktion")
-        smiles_input = st.text_input("SMILES String (z.B. A.B>>C)", "C*(=O)O.OCC>>C*(=O)OCC")
-        ratio_input = st.text_input("Molare Verhältnisse", "1>>1")
-    
-    if st.button("Visualisieren", key="btn_single"):
-        data = parse_smiles(smiles_input)
-        if data:
-            result_img = draw_reaction_line(data, ratio_input, reaction_name_input)
-            st.image(result_img, caption="Vorschau")
-            
-            # Download vorbereiten
-            buf = io.BytesIO()
-            result_img.save(buf, format="PNG")
-            filename = f"{reaction_name_input.replace(' ', '_')}.png"
-            st.download_button("Bild herunterladen", buf.getvalue(), filename, "image/png")
-        else:
-            st.error("Ungültiges SMILES-Format. Bitte prüfe deine Eingabe.")
+        name = st.text_input("Reaktionsname", "Veresterung")
+        smiles = st.text_input("SMILES (A.B>>C)", "C*(=O)O.OCC>>C*(=O)OCC")
+        ratio = st.text_input("Verhältnisse (z.B. 2>>1)", "1>>1")
 
-# --- TAB 2: EXCEL-VERARBEITUNG ---
-with tab2:
-    uploaded_file = st.file_uploader("Excel-Datei hochladen (.xlsx)", type=["xlsx"])
-    if uploaded_file:
-        df = pd.read_excel(uploaded_file)
-        st.write("Vorschau der geladenen Daten:")
-        st.dataframe(df.head())
-        
-        if st.button("Alle Reaktionen generieren", key="btn_batch"):
-            for idx, row in df.iterrows():
-                nom = str(row.get('Nom', f"Reaction_{idx}"))
-                ratio = str(row.get('Ratio', '1>>1'))
-                smiles_val = row.get('SMILES_Allg')
-                
-                data = parse_smiles(smiles_val)
-                if data:
-                    st.write(f"### {nom}")
-                    img = draw_reaction_line(data, ratio, nom)
-                    st.image(img)
-                    
-                    # Optional: Kleiner Download-Link pro Bild
-                    buf = io.BytesIO()
-                    img.save(buf, format="PNG")
-                    st.download_button(f"Download {nom}", buf.getvalue(), f"{nom}.png", "image/png", key=f"dl_{idx}")
-                else:
-                    st.warning(f"Konnte SMILES in Zeile {idx} ({nom}) nicht lesen.")
+    if st.button("Generieren"):
+        data = parse_smiles(smiles)
+        if data:
+            img = draw_reaction_line(data, ratio, name)
+            st.image(img)
+            
+            # Downloads
+            c1, c2 = st.columns(2)
+            # Bild
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            c1.download_button("💾 Bild speichern (PNG)", buf.getvalue(), f"{name}.png")
+            
+            # Chemie-Datei für KingDraw
+            rxn_data = export_to_rxn(smiles)
+            if rxn_data:
+                c2.download_button("🧬 Editierbar (KingDraw/BioVIA)", rxn_data, f"{name}.rxn", "chemical/x-mdl-rxnfile")
+        else:
+            st.error("SMILES Format ungültig. Nutze '>>' als Trenner.")
