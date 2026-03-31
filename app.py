@@ -157,3 +157,57 @@ with tab1:
                 c2.download_button("🧬 Editierbar (KingDraw/BioVIA)", rxn_data, f"{name}.rxn", "chemical/x-mdl-rxnfile")
         else:
             st.error("SMILES Format ungültig. Nutze '>>' als Trenner.")
+
+# --- TAB 2: EXCEL-VERARBEITUNG ---
+with tab2:
+    uploaded_file = st.file_uploader("Excel-Datei hochladen (.xlsx)", type=["xlsx"])
+    
+    if uploaded_file:
+        df = pd.read_excel(uploaded_file)
+        st.write("### 1. Daten-Vorschau")
+        st.dataframe(df.head(3))
+        
+        st.divider()
+        st.write("### 2. Spalten-Zuordnung")
+        col_a, col_b, col_c = st.columns(3)
+        
+        # Hier wählst du aus, welche Spalte was ist
+        all_cols = df.columns.tolist()
+        col_smiles = col_a.selectbox("Spalte mit SMILES (A.B>>C)", all_cols)
+        col_name = col_b.selectbox("Spalte mit Namen", all_cols)
+        col_ratio = col_c.selectbox("Spalte mit Verhältnissen (optional)", ["Keine"] + all_cols)
+
+        if st.button("🚀 Alle Reaktionen generieren", key="btn_batch"):
+            for idx, row in df.iterrows():
+                # Daten aus der gewählten Spalte ziehen
+                nom = str(row[col_name])
+                smiles_val = str(row[col_smiles])
+                
+                # Verhältnis prüfen
+                if col_ratio != "Keine":
+                    ratio_val = str(row[col_ratio])
+                else:
+                    ratio_val = "1>>1"
+                
+                data = parse_smiles(smiles_val)
+                
+                if data:
+                    st.write(f"---")
+                    st.subheader(f"Reaktion: {nom}")
+                    
+                    # Bild generieren
+                    img = draw_reaction_line(data, ratio_val, nom)
+                    st.image(img)
+                    
+                    # Download Buttons
+                    c1, c2 = st.columns(2)
+                    
+                    buf = io.BytesIO()
+                    img.save(buf, format="PNG")
+                    c1.download_button(f"PNG: {nom}", buf.getvalue(), f"{nom}.png", key=f"p_{idx}")
+                    
+                    rxn_data = export_to_rxn(smiles_val)
+                    if rxn_data:
+                        c2.download_button(f"KingDraw: {nom}", rxn_data, f"{nom}.rxn", key=f"k_{idx}")
+                else:
+                    st.warning(f"⚠️ Zeile {idx}: SMILES '{smiles_val}' konnte nicht gelesen werden.")
