@@ -55,38 +55,37 @@ def parse_smiles(smiles_str):
     return None
 
 def draw_reaction_line(data, ratio_str, reaction_name="Unbenannte Reaktion"):
-    """Zeichnet die Reaktion mit mathematisch zentrierten Elementen."""
+    """Zeichnet die Reaktion mit einer dynamisch berechneten Breite."""
     r_parts = str(ratio_str).replace(">>", ".").split(".")
     
-    # Leinwand etwas höher (700 statt 600), damit die 500px Moleküle Platz zum Atmen haben
-    canvas = Image.new('RGB', (3000, 700), color=(255, 255, 255))
+    # --- DYNAMISCHE BREITE BERECHNEN ---
+    # Wir schätzen: pro Molekül ca. 550px, plus Pfeil (400px), plus Puffer
+    anzahl_elemente = len(data['r']) + len(data['p'])
+    dynamische_breite = (anzahl_elemente * 550) + 800 
+    # Sicherstellen, dass die Leinwand nicht zu klein für den Namen ist
+    dynamische_breite = max(dynamische_breite, 1500) 
+    
+    canvas_h = 700
+    canvas = Image.new('RGB', (dynamische_breite, canvas_h), color=(255, 255, 255))
     draw = ImageDraw.Draw(canvas)
     
-    # --- FIX: ROBUSTE SCHRIFTARTEN-ZUWEISUNG ---
-    # Wir setzen Standardwerte, falls das Laden fehlschlägt
+    # --- SCHRIFTARTEN (wie besprochen) ---
     font_title = ImageFont.load_default()
     font_main = ImageFont.load_default()
-
     try: 
-        # 1. Versuch: Arial (Lokal / Windows)
         font_title = ImageFont.truetype("arial.ttf", 45)
-        font_main = ImageFont.truetype("arial.ttf", 65) # Harmonische Größe zu 500px Molekülen
+        font_main = ImageFont.truetype("arial.ttf", 65)
     except: 
         try:
-            # 2. Versuch: DejaVuSans (Häufig auf Streamlit Cloud / Linux)
-            # Pfad kann variieren, daher probieren wir den gängigsten
             font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 45)
             font_main = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 65)
         except:
-            # 3. Fallback: Standard (bereits oben gesetzt, falls alles andere fehlschlägt)
             pass
-    # ------------------------------------------
 
-    # Den Titel zeichnen
     draw.text((50, 30), str(reaction_name), fill="black", font=font_title)
     
     x_cursor = 50
-    y_midline = 350 # Zentrum bei 700px Gesamthöhe
+    y_midline = canvas_h // 2  # Automatisch 350
 
     def draw_centered_text(text, x, y_mid, font, color="black"):
         bbox = draw.textbbox((0, 0), text, font=font)
@@ -139,7 +138,7 @@ def draw_reaction_line(data, ratio_str, reaction_name="Unbenannte Reaktion"):
             w = draw_centered_text("+", x_cursor, y_midline, font_main)
             x_cursor += w + 40
 
-    return canvas.crop((0, 0, x_cursor + 50, 600))
+    return canvas.crop((0, 0, x_cursor + 50, canvas_h))
 
 # --- 3. INTERFACE ---
 
