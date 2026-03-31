@@ -10,9 +10,7 @@ import io
 st.set_page_config(page_title="Chemie-Designer Pro", page_icon="🧪", layout="wide")
 
 # --- 2. FUNKTIONEN ---
-
 def generate_mol_img(smiles):
-    """Erzeugt ein Bild-Objekt mit fixierter Skalierung und dickeren Bindungen."""
     mol = Chem.MolFromSmiles(smiles)
     if not mol: return None
     
@@ -27,12 +25,12 @@ def generate_mol_img(smiles):
 
     AllChem.Compute2DCoords(mol)
     
-    # RDKit Drawing Options für "sauberen" Look
-    d = rdMolDraw2D.MolDraw2DCairo(400, 400) # Etwas größer für Schärfe
+    # GRÖSSERES BILD: 500x500 statt 400x400
+    d = rdMolDraw2D.MolDraw2DCairo(500, 500)
     opts = d.drawOptions()
-    opts.bondLineWidth = 3           # Dickere Bindungen
-    opts.minFontSize = 20            # Lesbare Labels
-    opts.fixedBondLength = 35        # Hält alle Moleküle im gleichen Maßstab
+    opts.bondLineWidth = 4         # Noch dickere Bindungen für die Optik
+    opts.minFontSize = 25          # Atom-Labels (O, N, R) werden größer
+    opts.fixedBondLength = 45      # Längere Bindungen lassen das Molekül größer wirken
     
     d.DrawMolecule(mol)
     d.FinishDrawing()
@@ -59,30 +57,36 @@ def parse_smiles(smiles_str):
 def draw_reaction_line(data, ratio_str, reaction_name="Unbenannte Reaktion"):
     """Zeichnet die Reaktion mit mathematisch zentrierten Elementen."""
     r_parts = str(ratio_str).replace(">>", ".").split(".")
-    canvas = Image.new('RGB', (2800, 600), color=(255, 255, 255))
+    
+    # Leinwand etwas höher (700 statt 600), damit die 500px Moleküle Platz zum Atmen haben
+    canvas = Image.new('RGB', (3000, 700), color=(255, 255, 255))
     draw = ImageDraw.Draw(canvas)
     
     # --- FIX: ROBUSTE SCHRIFTARTEN-ZUWEISUNG ---
+    # Wir setzen Standardwerte, falls das Laden fehlschlägt
+    font_title = ImageFont.load_default()
+    font_main = ImageFont.load_default()
+
     try: 
-        # Versuche Arial zu laden (Windows/lokal)
-        font_title = ImageFont.truetype("arial.ttf", 50)
-        font_main = ImageFont.truetype("arial.ttf", 40) 
+        # 1. Versuch: Arial (Lokal / Windows)
+        font_title = ImageFont.truetype("arial.ttf", 45)
+        font_main = ImageFont.truetype("arial.ttf", 65) # Harmonische Größe zu 500px Molekülen
     except: 
         try:
-            # Versuche DejaVuSans (Standard auf vielen Linux/Streamlit-Servern)
-            font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 50)
-            font_main = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 90)
+            # 2. Versuch: DejaVuSans (Häufig auf Streamlit Cloud / Linux)
+            # Pfad kann variieren, daher probieren wir den gängigsten
+            font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 45)
+            font_main = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 65)
         except:
-            # Fallback auf System-Standardschrift
-            font_title = ImageFont.load_default()
-            font_main = ImageFont.load_default()
+            # 3. Fallback: Standard (bereits oben gesetzt, falls alles andere fehlschlägt)
+            pass
     # ------------------------------------------
 
-    # Jetzt ist sichergestellt, dass font_title existiert!
+    # Den Titel zeichnen
     draw.text((50, 30), str(reaction_name), fill="black", font=font_title)
     
     x_cursor = 50
-    y_midline = 300 # Das Zentrum der vertikalen Achse
+    y_midline = 350 # Zentrum bei 700px Gesamthöhe
 
     def draw_centered_text(text, x, y_mid, font, color="black"):
         bbox = draw.textbbox((0, 0), text, font=font)
