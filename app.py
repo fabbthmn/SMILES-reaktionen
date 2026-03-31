@@ -149,49 +149,58 @@ with t1:
         img = combine_and_render(s_list, [r1, r2], name)
         if img:
             st.image(img)
-            b_png = io.BytesIO()
-            img.save(b_png, format="PNG")
-            col_d1, col_d2 = st.columns(2)
-            col_d1.download_button("💾 Bild (PNG)", b_png.getvalue(), f"{name}.png")
-            rxn_data = export_to_rxn(s1)
-            if rxn_data:
-                col_d2.download_button("🧬 Editierbar (RXN)", rxn_data, f"{name}.rxn")
+            b_png = io.BytesIO(); img.save(b_png, format="PNG")
+            cd1, cd2 = st.columns(2)
+            cd1.download_button("💾 Bild (PNG)", b_png.getvalue(), f"{name}.png")
+            rxn = export_to_rxn(s1)
+            if rxn: cd2.download_button("🧬 Editierbar (RXN)", rxn, f"{name}.rxn")
 
 with t2:
     up = st.file_uploader("Excel hochladen", type=["xlsx"])
     if up:
         df = pd.read_excel(up)
         cols = df.columns.tolist()
-        cn = st.selectbox("Name", cols); cs1 = st.selectbox("SMILES A", cols)
-        cs2 = st.selectbox("SMILES B (Opt)", ["Keine"] + cols); cr = st.selectbox("Verhältnis", ["Keine"] + cols)
+        cn = st.selectbox("Name Spalte", cols); cs1 = st.selectbox("SMILES A Spalte", cols)
+        cs2 = st.selectbox("SMILES B Spalte (Opt)", ["Keine"] + cols); cr = st.selectbox("Verhältnis Spalte", ["Keine"] + cols)
 
-        if st.button("🚀 Alle Generieren & ZIP vorbereiten"):
+        if st.button("🚀 Reaktionen generieren"):
             zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
                 for idx, row in df.iterrows():
-                    nom = str(row[cn]).replace("/", "_") # Dateinamen sicher machen
+                    nom_raw = str(row[cn])
+                    nom = nom_raw.replace("/", "_").replace("\\", "_")
                     s_list = [str(row[cs1])]
                     ratio = str(row[cr]) if cr != "Keine" else "1>>1"
                     if cs2 != "Keine" and pd.notna(row[cs2]): s_list.append(str(row[cs2]))
                     
-                    img = combine_and_render(s_list, [ratio, ratio], nom)
+                    img = combine_and_render(s_list, [ratio, ratio], nom_raw)
                     if img:
-                        st.write(f"Verarbeite: {nom}")
-                        # Bild für ZIP
-                        img_byte_arr = io.BytesIO()
-                        img.save(img_byte_arr, format='PNG')
-                        zip_file.writestr(f"{nom}.png", img_byte_arr.getvalue())
+                        # --- VORSCHAU ---
+                        st.markdown(f"### {idx+1}. {nom_raw}")
+                        st.image(img)
                         
-                        # RXN für ZIP
+                        # --- EINZEL-DOWNLOADS ---
+                        img_byte_arr = io.BytesIO(); img.save(img_byte_arr, format='PNG')
                         rxn_data = export_to_rxn(str(row[cs1]))
+                        
+                        c_d1, c_d2 = st.columns(2)
+                        c_d1.download_button(f"PNG: {nom}", img_byte_arr.getvalue(), f"{nom}.png", key=f"p_{idx}")
+                        if rxn_data:
+                            c_d2.download_button(f"RXN: {nom}", rxn_data, f"{nom}.rxn", key=f"r_{idx}")
+                        
+                        # --- FÜR ZIP SAMMELN ---
+                        zip_file.writestr(f"{nom}.png", img_byte_arr.getvalue())
                         if rxn_data:
                             zip_file.writestr(f"{nom}.rxn", rxn_data)
+                        
+                        st.divider()
             
-            st.success("✅ Alle Reaktionen verarbeitet!")
+            # --- FINALER SAMMEL-DOWNLOAD ---
+            st.success("✅ Alle Reaktionen fertig erstellt!")
             st.download_button(
-                label="📦 ALLES HERUNTERLADEN (ZIP)",
+                label="📦 ALLE REAKTIONEN ALS ZIP HERUNTERLADEN",
                 data=zip_buffer.getvalue(),
-                file_name="chemie_export.zip",
+                file_name="chemie_batch_export.zip",
                 mime="application/zip",
                 use_container_width=True
             )
