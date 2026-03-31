@@ -66,7 +66,7 @@ def draw_reaction_line(data, ratio_str, reaction_name="Unbenannte Reaktion"):
     try: 
         # Versuche Arial zu laden (Windows/lokal)
         font_title = ImageFont.truetype("arial.ttf", 50)
-        font_main = ImageFont.truetype("arial.ttf", 90) 
+        font_main = ImageFont.truetype("arial.ttf", 40) 
     except: 
         try:
             # Versuche DejaVuSans (Standard auf vielen Linux/Streamlit-Servern)
