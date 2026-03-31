@@ -57,18 +57,29 @@ def parse_smiles(smiles_str):
     return None
 
 def draw_reaction_line(data, ratio_str, reaction_name="Unbenannte Reaktion"):
+    """Zeichnet die Reaktion mit mathematisch zentrierten Elementen."""
     r_parts = str(ratio_str).replace(">>", ".").split(".")
     canvas = Image.new('RGB', (2800, 600), color=(255, 255, 255))
     draw = ImageDraw.Draw(canvas)
     
-    # Fonts laden mit massiv erhöhter Größe für Lesbarkeit
+    # --- FIX: ROBUSTE SCHRIFTARTEN-ZUWEISUNG ---
     try: 
+        # Versuche Arial zu laden (Windows/lokal)
         font_title = ImageFont.truetype("arial.ttf", 50)
         font_main = ImageFont.truetype("arial.ttf", 90) 
     except: 
-        font_main = ImageFont.load_default()
+        try:
+            # Versuche DejaVuSans (Standard auf vielen Linux/Streamlit-Servern)
+            font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 50)
+            font_main = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 90)
+        except:
+            # Fallback auf System-Standardschrift
+            font_title = ImageFont.load_default()
+            font_main = ImageFont.load_default()
+    # ------------------------------------------
 
-    draw.text((50, 30), reaction_name, fill="black", font=font_title)
+    # Jetzt ist sichergestellt, dass font_title existiert!
+    draw.text((50, 30), str(reaction_name), fill="black", font=font_title)
     
     x_cursor = 50
     y_midline = 300 # Das Zentrum der vertikalen Achse
