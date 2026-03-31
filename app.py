@@ -49,28 +49,40 @@ def generate_mol_img(smiles):
 
 def export_to_rxn(smiles_str):
     try:
+        # RXN unterstützt das Standard-Format Edukt>>Produkt oder Edukt>Agent>Produkt
         rxn = AllChem.ReactionFromSmarts(smiles_str, useSmiles=True)
         return AllChem.ReactionToRxnBlock(rxn)
     except:
         return None
 
 def parse_smiles(smiles_str):
+    """Unterstützt jetzt A.B >> C ODER A.B > Reagenz > C"""
     if not smiles_str or str(smiles_str).lower() == "nan": return None
-    if ">>" in smiles_str:
-        parts = smiles_str.split(">>")
-        return {"r": parts[0].split("."), "p": parts[1].split(".")}
+    
+    # Wir splitten nach ">", um zu sehen wie viele Teile wir haben
+    parts = str(smiles_str).split(">")
+    # Entferne leere Strings (entstehen bei >>)
+    parts = [p for p in parts if p.strip() != ""]
+    
+    if len(parts) == 3:
+        # Format: Edukt > Reagenz > Produkt
+        return {"r": parts[0].split("."), "a": parts[1], "p": parts[2].split(".")}
+    elif len(parts) == 2:
+        # Format: Edukt >> Produkt
+        return {"r": parts[0].split("."), "a": "", "p": parts[1].split(".")}
     return None
 
 def draw_single_line(data, ratio_str, f_main, f_title, name=None):
     r_parts = str(ratio_str).replace(">>", ".").split(".")
     anzahl = len(data['r']) + len(data['p'])
     canvas_w = (anzahl * 600) + 1200 
-    canvas_h = 700
+    canvas_h = 850 # Erhöhte Höhe für mehr Platz zwischen Titel und Bild
     canvas = Image.new('RGB', (canvas_w, canvas_h), color=(255, 255, 255))
     draw = ImageDraw.Draw(canvas)
     y_mid = canvas_h // 2
     x_cursor = 100
 
+    # Titel (Reaktionsname)
     if name:
         draw.text((100, 30), str(name), fill="black", font=f_title)
 
@@ -80,6 +92,7 @@ def draw_single_line(data, ratio_str, f_main, f_title, name=None):
         draw.text((x, y - (th // 2) - 10), txt, fill="black", font=font)
         return bbox[2] - bbox[0]
 
+    # --- 1. REAKTANDEN ---
     for i, sm in enumerate(data['r']):
         coeff = r_parts[i].strip() if i < len(r_parts) else ""
         if coeff not in ["1", "nan", "", "1.0"]:
@@ -92,11 +105,26 @@ def draw_single_line(data, ratio_str, f_main, f_title, name=None):
             x_cursor += 30
             x_cursor += draw_text_centered("+", x_cursor, y_mid, f_main) + 50
 
+    # --- 2. PFEIL MIT REAGENZIEN ---
     x_cursor += 60
-    draw.line([(x_cursor, y_mid), (x_cursor + 250, y_mid)], fill="black", width=4)
-    draw.polygon([(x_cursor + 250, y_mid), (x_cursor + 220, y_mid - 15), (x_cursor + 220, y_mid + 15)], fill="black")
-    x_cursor += 320
+    arrow_len = 350 # Etwas länger für Text auf dem Pfeil
+    # Pfeil-Linie
+    draw.line([(x_cursor, y_mid), (x_cursor + arrow_len, y_mid)], fill="black", width=4)
+    # Pfeil-Spitze
+    draw.polygon([(x_cursor + arrow_len, y_mid), (x_cursor + arrow_len - 30, y_mid - 15), (x_cursor + arrow_len - 30, y_mid + 15)], fill="black")
+    
+    # Reagenzien-Text ÜBER den Pfeil
+    if data.get("a") and data["a"].strip() != "":
+        f_reag = get_font(45) # Etwas kleinere Schrift als Haupt-Symbole
+        reag_txt = data["a"]
+        bbox_r = draw.textbbox((0, 0), reag_txt, font=f_reag)
+        r_w = bbox_r[2] - bbox_r[0]
+        # Text mittig über dem Pfeil platzieren
+        draw.text((x_cursor + (arrow_len // 2) - (r_w // 2), y_mid - 70), reag_txt, fill="black", font=f_reag)
 
+    x_cursor += arrow_len + 70
+
+    # --- 3. PRODUKTE ---
     offset = len(data['r'])
     for i, sm in enumerate(data['p']):
         c_idx = offset + i
@@ -131,15 +159,16 @@ def combine_and_render(smiles_list, ratio_list, reaction_name):
         y_off += img.height
     return combined
 
-# --- 4. INTERFACE ---
+# --- INTERFACE ---
 
 st.title("⚗️ Chemie-Designer Pro")
 t1, t2 = st.tabs(["✨ Einzel-Eingabe", "📂 Batch-Export"])
 
 with t1:
     name = st.text_input("Reaktionsname", "Reaktion_1")
+    st.info("Format-Tipp: Edukt1.Edukt2 > Reagenz > Produkt")
     c1, c2 = st.columns(2)
-    s1 = c1.text_input("SMILES 1", "C*(=O)O.OCC>>C*(=O)OCC")
+    s1 = c1.text_input("SMILES 1", "C*(=O)O.OCC > H2SO4 > C*(=O)OCC")
     r1 = c1.text_input("Verhältnis 1", "1>>1")
     s2 = c2.text_input("SMILES 2 (Optional)", "")
     r2 = c2.text_input("Verhältnis 2", "1>>1")
@@ -175,27 +204,18 @@ with t2:
                     
                     img = combine_and_render(s_list, [ratio, ratio], nom_raw)
                     if img:
-                        # --- VORSCHAU ---
                         st.markdown(f"### {idx+1}. {nom_raw}")
                         st.image(img)
-                        
-                        # --- EINZEL-DOWNLOADS ---
                         img_byte_arr = io.BytesIO(); img.save(img_byte_arr, format='PNG')
                         rxn_data = export_to_rxn(str(row[cs1]))
-                        
                         c_d1, c_d2 = st.columns(2)
                         c_d1.download_button(f"PNG: {nom}", img_byte_arr.getvalue(), f"{nom}.png", key=f"p_{idx}")
                         if rxn_data:
                             c_d2.download_button(f"RXN: {nom}", rxn_data, f"{nom}.rxn", key=f"r_{idx}")
-                        
-                        # --- FÜR ZIP SAMMELN ---
                         zip_file.writestr(f"{nom}.png", img_byte_arr.getvalue())
-                        if rxn_data:
-                            zip_file.writestr(f"{nom}.rxn", rxn_data)
-                        
+                        if rxn_data: zip_file.writestr(f"{nom}.rxn", rxn_data)
                         st.divider()
             
-            # --- FINALER SAMMEL-DOWNLOAD ---
             st.success("✅ Alle Reaktionen fertig erstellt!")
             st.download_button(
                 label="📦 ALLE REAKTIONEN ALS ZIP HERUNTERLADEN",
