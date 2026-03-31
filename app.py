@@ -72,7 +72,7 @@ def draw_single_line(data, ratio_str, f_main, f_title, name=None):
     x_cursor = 100
 
     if name:
-        draw.text((100, 40), str(name), fill="black", font=f_title)
+        draw.text((100, 30), str(name), fill="black", font=f_title)
 
     def draw_text_centered(txt, x, y, font):
         bbox = draw.textbbox((0, 0), txt, font=font)
